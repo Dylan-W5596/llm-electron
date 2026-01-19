@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+python-multipart
+# We will install llama-cpp-python separately with specific flags for CUDA
