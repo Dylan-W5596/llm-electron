@@ -43,3 +43,12 @@ npm run electron:dev
 - **後端無法啟動**: Check console logs in Electron window or terminal. Manual run: `..\venv\Scripts\python ..\backend\main.py`
 - **模型載入失敗**: 確保模型檔案完整且路徑正確。
 - **CUDA 錯誤**: 確保安裝了正確版本的 `llama-cpp-python` wheels。
+
+## Python依賴套件
+- fastapi
+- uvicorn
+- pydantic
+- sqlalchemy
+- python-multipart
+
+We will install llama-cpp-python separately with specific flags for CUDA

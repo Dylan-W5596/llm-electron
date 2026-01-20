@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional
 import os
+import sys
 
 # 模型的全域路徑
 MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "Llama-3.2-1B-Instruct-Q8_0.gguf"))
@@ -19,6 +20,24 @@ class ModelEngine:
             raise FileNotFoundError(f"在 {MODEL_PATH} 找不到模型")
 
         try:
+            # 顯式添加 CUDA DLL 搜尋路徑 (針對 Windows 且 Python 3.8+)
+            if sys.platform == "win32":
+                cuda_paths = [
+                    r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1\bin",
+                    r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin",
+                    r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin",
+                    r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\bin",
+                    # 嘗試包含 LM Studio 攜帶的程式庫
+                    os.path.expanduser(r"~\.lmstudio\extensions\backends\vendor\win-llama-cuda12-vendor-v2")
+                ]
+                for path in cuda_paths:
+                    if os.path.exists(path):
+                        print(f"正在將 DLL 目錄加入搜尋路徑: {path}")
+                        try:
+                            os.add_dll_directory(path)
+                        except Exception as e:
+                            print(f"預警：無法加入目錄 {path}: {e}")
+
             from llama_cpp import Llama
             # 嘗試使用 CUDA 載入 (n_gpu_layers=-1 表示全部層都在 GPU 上)
             # context_window=2048 是預設值，Llama 3.2 1B 通常支援更多 (128k)，但本地通常保持較低以節省 RAM。
@@ -35,7 +54,7 @@ class ModelEngine:
             import traceback
             print("尚未安裝 llama-cpp-python 或載入失敗。")
             print("若您遇到 DLL 載入錯誤，請確認以下事項：")
-            print("1. 若使用 CUDA 版，請確認已安裝 NVIDIA CUDA Toolkit 12.x。")
+            print("1. 若使用 CUDA 版，請確認已安裝 NVIDIA CUDA Toolkit 12.x 或 13.x。")
             print("2. 請確保已安裝 'Microsoft Visual C++ Redistributable' (最新版)。")
             print(f"詳細錯誤: {e}")
             traceback.print_exc()
