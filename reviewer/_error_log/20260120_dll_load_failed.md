@@ -43,7 +43,16 @@ Python 3.8 之後的版本在 Windows 上安全性提高，它不再主動搜尋
 
 ---
 
-## 4. 預防措施 (Prevention)
+## 4. 解決歷程 (Solution History)
+1. **偵測**: 啟動 FastAPI 時，`ModelEngine` 初始化失敗並拋出 `llama.dll` 找不到模組的錯誤。
+2. **診斷**: 透過 `dependencies.exe` 或觀察電腦安裝的 CUDA 版本 (13.1)，確認套件編譯時針對的是 12.x 版本。
+3. **實驗**: 嘗試重新編譯 `llama-cpp-python` 但權限或環境受限，決定改用 DLL 模擬方案。
+4. **執行**: 從 external 工具提取所需的 `cudart64_12.dll` 等檔案，並植入 venv 目錄。
+5. **最終修復**: 結合 `os.add_dll_directory` 修改，成功讓 `llama-cpp` 識別到 GPU 核心組件。
+
+---
+
+## 5. 預防措施 (Prevention)
 
 *   **全包裝部署**: 未來釋出版本時，不應要求使用者自行安裝 CUDA Toolkit。應將所有核心 DLLs (Runtime) 直接打包在應用程式安裝包內。
 *   **版本鎖定**: 在安裝 `llama-cpp-python` 時，應明確指定與當前驅動程式及系統環境最匹配的 `extra-index-url` 版本。

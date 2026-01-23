@@ -2,18 +2,39 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, F
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 
+from sqlalchemy.engine import Engine
+from sqlalchemy import event
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
 DATABASE_URL = "sqlite:///./chat_history.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+class Group(Base):
+    __tablename__ = "groups"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, default="未分類")
+    order = Column(Integer, default=0)
+    sessions = relationship("ChatSession", back_populates="group", cascade="all, delete-orphan")
+
 class ChatSession(Base):
     __tablename__ = "sessions"
+    __table_args__ = {'sqlite_autoincrement': True}
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, default="New Chat")
     created_at = Column(DateTime, default=datetime.utcnow)
-    messages = relationship("Message", back_populates="session", cascade="all, delete-orphan")
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    order = Column(Integer, default=0)
+    
+    group = relationship("Group", back_populates="sessions")
+    messages = relationship("Message", back_populates="session", cascade="all, delete-orphan", passive_deletes=True)
 
 class Message(Base):
     __tablename__ = "messages"

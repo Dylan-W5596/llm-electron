@@ -3,43 +3,37 @@
 ## 檔案總覽
 
 ### `backend/main.py`
-這是 FastAPI 應用程式的入口點。
+這是 FastAPI 應用程式的入口點與控制器。
 - **功能**:
     - 初始化資料庫與 AI 引擎。
-    - 提供 REST API (`/chat`, `/sessions` 等) 供前端呼叫。
-    - 處理跨來源資源共享 (CORS)。
+    - **路由管理**: 管理包括對話、訊息及新增的「群組管理」與「會話移動」端點。
+    - **邏輯分發**: 協調資料庫操作與 `ModelEngine` 的推論任務。
 - **技術點**:
-    - `FastAPI`: 現代、高效能的 web 框架。
-    - `SQLAlchemy`: ORM 用於資料庫操作。
-    - `Pydantic`: 資料驗證。
+    - `FastAPI`: 高效能 web 框架。
+    - `SQLAlchemy`: ORM 資料庫操作。
 
 ### `backend/model_engine.py`
 封裝了 LLM 的推論邏輯。
 - **功能**:
-    - 載入 GGUF 模型 (`Llama-3.2-1B-Instruct-Q8_0.gguf`).
-    - 管理 `llama-cpp-python` 的 `Llama` 實例。
-    - 處理對話格式 (Chat Format) 與生成。
-- **關鍵技術**:
-    - `llama-cpp-python`: 讓 Python 能呼叫 C++ 編寫的 `llama.cpp` 函式庫，支援 CUDA 加速。
-    - **量化 (Quantization)**: 使用 Q8_0 (8-bit) 量化，在保持精度的同時減少記憶體使用與推理時間。
-    - **CUDA**: 透過設定 `n_gpu_layers=-1` 將所有層卸載至 GPU 執行。
+    - 載入 Llama 3.2 1B (GGUF 格式)。
+    - **硬體加速**: 透過 CUDA 全量卸載 (`n_gpu_layers=-1`) 提升推論速度。
+    - **對話流**: 支援流式 (Streaming) 的思考與生成 (目前主要為同步回應，可擴充)。
 
 ### `backend/database.py`
-定義資料庫 Schema 與連線。
-- **功能**:
-    - 使用 SQLite 儲存聊天紀錄。
-    - 定義 `ChatSession` (對話) 與 `Message` (訊息) 資料表。
+定義資料庫 Schema 與連線，支援群組分類。
+- **結構更新**:
+    - **`Group` 資料表**: 儲存群組名稱與自定義排序。
+    - **`ChatSession` 資料表**: 新增 `group_id` (外鍵) 與 `order` (排序位) 欄位。
+    - **級聯刪除**: 實作 `cascade="all, delete-orphan"`，確保刪除會話時訊息同步清理。
 - **技術點**:
-    - `SQLAlchemy` (Declarative Base): 定義資料模型。
-    - `SQLite`: 輕量級檔案型資料庫，適合本地應用程式。
+    - `SQLite`: 本地檔案資料庫。
 
-### `download_model.py`
-自動化下載模型的腳本。
-- **功能**:
-    - 從 HuggingFace 下載指定的 GGUF 模型。
-    - 顯示下載進度條。
+### `backend/migrate_db.py` [NEW]
+維修用腳本。
+- **功能**: 手動執行 SQL 指令為舊有的資料表補上缺失欄位，解決 schema 不一致導致的啟動錯誤。
 
-## 依賴套件 (`requirements.txt`)
-- `fastapi`, `uvicorn`: Web 伺服器。
-- `llama-cpp-python`: AI 推論核心。
-- `sqlalchemy`: 資料庫 ORM。
+---
+
+## 資料安全性與完整性
+- **CASCADE**: 刪除操作會連帶刪除關聯資料，防止資料庫產生孤兒訊息。
+- **Thread Safety**: 設定 `check_same_thread=False` 以支援 FastAPI 的異步請求環境。

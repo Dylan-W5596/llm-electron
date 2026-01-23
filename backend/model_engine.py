@@ -1,6 +1,20 @@
 from typing import List, Dict, Optional
 import os
 import sys
+from rich.console import Console
+from rich.panel import Panel
+from rich.theme import Theme
+
+# 定義主題
+custom_theme = Theme({
+    "info": "dim cyan",
+    "warning": "magenta",
+    "danger": "bold red",
+    "success": "bold green"
+})
+
+# 強制使用 UTF-8 輸出以減少 Windows 編碼報錯，雖然仍受限於終端機能否顯示
+console = Console(theme=custom_theme, force_terminal=True, legacy_windows=None)
 
 # 模型的全域路徑
 MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "Llama-3.2-1B-Instruct-Q8_0.gguf"))
@@ -14,9 +28,10 @@ class ModelEngine:
         if self.llm:
             return
 
-        print(f"正在載入模型，位置: {MODEL_PATH}")
+        console.print(Panel(f"正在載入模型，位置: [bold yellow]{MODEL_PATH}[/bold yellow]", title="[bold blue]AI 引擎初始化[/bold blue]", border_style="blue"))
+        
         if not os.path.exists(MODEL_PATH):
-            print("找不到模型檔案！請先下載模型。")
+            console.print("[danger]找不到模型檔案！請先下載模型。[/danger]")
             raise FileNotFoundError(f"在 {MODEL_PATH} 找不到模型")
 
         try:
@@ -32,38 +47,38 @@ class ModelEngine:
                 ]
                 for path in cuda_paths:
                     if os.path.exists(path):
-                        print(f"正在將 DLL 目錄加入搜尋路徑: {path}")
+                        console.print(f"[info]正在將 DLL 目錄加入搜尋路徑: {path}[/info]")
                         try:
+                            # 即使目錄不存在也會報錯，我們已經檢查過 exists
                             os.add_dll_directory(path)
                         except Exception as e:
-                            print(f"預警：無法加入目錄 {path}: {e}")
+                            console.print(f"[warning]無法加入目錄 {path}: {e}[/warning]")
 
             from llama_cpp import Llama
-            # 嘗試使用 CUDA 載入 (n_gpu_layers=-1 表示全部層都在 GPU 上)
-            # context_window=2048 是預設值，Llama 3.2 1B 通常支援更多 (128k)，但本地通常保持較低以節省 RAM。
-            # Llama 3.2 1B 上下文為 128k，但為了速度/記憶體，除非有要求，否則讓我們保持在 8192。
+            # 嘗試使用 CUDA 載入
+            # 注意: 這裡我們移除 Emoji ✅ 以防止 Windows CP950 編碼報錯
             self.llm = Llama(
                 model_path=MODEL_PATH,
                 n_gpu_layers=-1, # 將所有層卸載至 GPU
                 n_ctx=8192,      # 合理的上下文長度
-                verbose=True
+                verbose=False    # 減少 llama.cpp 的原始輸出以保持介面乾淨
             )
-            self.has_gpu = True # 假設已卸載，請檢查實際日誌
-            print("已使用 llama-cpp-python 成功載入模型。")
+            self.has_gpu = True
+            console.print(Panel("[success]已使用 llama-cpp-python 成功載入模型 (CUDA 加速已啟用)[/success]", border_style="green"))
+            
         except ImportError as e:
-            import traceback
-            print("尚未安裝 llama-cpp-python 或載入失敗。")
-            print("若您遇到 DLL 載入錯誤，請確認以下事項：")
-            print("1. 若使用 CUDA 版，請確認已安裝 NVIDIA CUDA Toolkit 12.x 或 13.x。")
-            print("2. 請確保已安裝 'Microsoft Visual C++ Redistributable' (最新版)。")
-            print(f"詳細錯誤: {e}")
-            traceback.print_exc()
+            console.print(Panel(f"[danger]尚未安裝 llama-cpp-python 或載入失敗。[/danger]\n詳細錯誤: {e}", title="載入錯誤", border_style="red"))
             self.llm = None
         except Exception as e:
-            import traceback
-            print("若看到 'Failed to load shared library'，通常代表缺少系統驅動程式 (CUDA Toolkit) 或 VC++ Redistributable。")
-            print(f"載入模型時發生未預期的錯誤: {e}")
-            traceback.print_exc()
+            # 移除所有可能無法在 CP950 顯示的特殊字元
+            console.print(Panel(
+                f"[danger]載入模型時發生未預期的錯誤[/danger]\n\n"
+                f"這通常代表系統環境缺少相依檔案。\n"
+                f"建議檢查: [bold]NVIDIA CUDA Toolkit[/bold] 或 [bold]VC++ Redistributable[/bold]\n\n"
+                f"系統詳細報錯: {str(e)}", 
+                title="引擎啟動失敗", 
+                border_style="red"
+            ))
             self.llm = None
 
     def is_loaded(self):
@@ -74,24 +89,35 @@ class ModelEngine:
         messages: [{"role": "user", "content": "..."}, ...]
         """
         if not self.llm:
-            self.load_model()
+            try:
+                self.load_model()
+            except Exception:
+                return "錯誤: 模型載入失敗，請檢查後端日誌。"
         
         if not self.llm:
             return "錯誤: 模型未載入。"
 
-        # Llama 3 聊天格式
-        # <|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nSystem Prompt<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nUser Input<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n
-        
-        # 幸運的是 llama-cpp-python 通常內建聊天處理器，但讓我們確定一下。
-        # 或者我們手動格式化。Llama 3.2 使用標準 Llama 3 instruct 格式。
-        
         try:
+            # 安全輸出日誌
+            last_msg = messages[-1]["content"] if messages else ""
+            log_text = f"USER > {last_msg[:30].strip()}..."
+            console.print(log_text, style="cyan")
+            
             response = self.llm.create_chat_completion(
                 messages=messages,
                 max_tokens=1024,
                 stop=["<|eot_id|>", "<|end_of_text|>"],
                 temperature=0.7
             )
-            return response["choices"][0]["message"]["content"]
+            
+            ans = response["choices"][0]["message"]["content"]
+            ans_display = ans[:30].strip().replace("\n", " ")
+            console.print(f"AI   > {ans_display}...", style="dim green")
+            return ans
         except Exception as e:
-            return f"生成過程中發生錯誤: {e}"
+            # 極其保守的錯誤輸出
+            try:
+                console.print(f"Error during generation: {str(e)}", style="bold red")
+            except:
+                print(f"Error during generation (plain): {str(e)}")
+            return f"生成過程中發生錯誤: {str(e)}"

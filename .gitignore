@@ -1,3 +1,6 @@
+# AntigravityRules
+.agent/rules/
+
 # Python
 venv/
 __pycache__/
