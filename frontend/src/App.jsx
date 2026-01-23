@@ -1,20 +1,37 @@
-import { useState, useEffect, useRef } from 'react'
-
-const BACKEND_URL = 'http://127.0.0.1:8000';
+import { useState, useEffect, useRef } from 'react';
+import { api } from './api';
+import Sidebar from './components/Sidebar';
+import ChatMessage from './components/ChatMessage';
+import ChatInput from './components/ChatInput';
 
 function App() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef(null);
 
-  // 初始化 Session
+  // 初始化
   useEffect(() => {
-    fetchSessions();
-    createNewSession();
+    const init = async () => {
+      try {
+        const [gs, ss] = await Promise.all([api.getGroups(), api.getSessions()]);
+        setGroups(gs);
+        setSessions(ss);
+
+        if (ss.length === 0) {
+          await handleNewChat();
+        } else {
+          handleLoadSession(ss[0].id);
+        }
+      } catch (e) {
+        console.warn("初始化失敗 (後端可能未啟動)", e.message);
+      }
+    };
+    init();
   }, []);
 
   // 捲動到底部
@@ -22,119 +39,164 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const fetchSessions = async () => {
+  const fetchData = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/sessions`);
-      const data = await res.json();
-      setSessions(data);
+      const [gs, ss] = await Promise.all([api.getGroups(), api.getSessions()]);
+      setGroups(gs);
+      setSessions(ss);
     } catch (e) {
-      console.error("無法取得 Session", e);
+      console.error("更新數據失敗", e);
     }
-  }
+  };
 
-  const createNewSession = async () => {
+  const handleNewChat = async (groupId = null) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'New Chat' })
-      });
-      const data = await res.json();
+      const data = await api.createSession('New Chat', groupId);
       setSessionId(data.id);
       setMessages([]);
-      fetchSessions();
+      await fetchData();
     } catch (e) {
-      console.error("建立 Session 失敗", e);
+      console.error("建立會話失敗", e);
     }
-  }
+  };
 
-  const loadSession = async (id) => {
+  const handleLoadSession = async (id) => {
     try {
       setSessionId(id);
-      const res = await fetch(`${BACKEND_URL}/sessions/${id}/messages`);
-      const data = await res.json();
+      const data = await api.getMessages(id);
       setMessages(data);
     } catch (e) {
-      console.error("載入 Session 失敗", e);
+      console.error("載入失敗", e);
     }
-  }
+  };
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleDeleteSession = async (id) => {
+    if (!window.confirm('確定要刪除此對話紀錄嗎？')) return;
+    try {
+      await api.deleteSession(id);
 
-    const userMsg = { role: 'user', content: input };
+      // 更新列表
+      const [gs, ss] = await Promise.all([api.getGroups(), api.getSessions()]);
+      setGroups(gs);
+      setSessions(ss);
+
+      if (sessionId === id) {
+        if (ss.length > 0) {
+          // 如果還有其他會話，切換到第一個
+          handleLoadSession(ss[0].id);
+        } else {
+          // 如果沒了，建立新的
+          setMessages([]);
+          handleNewChat();
+        }
+      }
+    } catch (e) {
+      console.error("刪除失敗", e);
+    }
+  };
+
+  const handleRenameSession = async (id, newTitle) => {
+    const targetTitle = newTitle.trim();
+    if (!targetTitle || targetTitle === sessions.find(s => s.id === id)?.title) return;
+    try {
+      await api.updateSession(id, targetTitle);
+      fetchData();
+    } catch (e) {
+      console.error("更名失敗", e);
+    }
+  };
+
+  const handleNewGroup = async () => {
+    try {
+      await api.createGroup('新群組');
+      fetchData();
+    } catch (e) {
+      console.error("建立群組失敗", e);
+    }
+  };
+
+  const handleRenameGroup = async (id, newName) => {
+    try {
+      await api.updateGroup(id, { name: newName });
+      fetchData();
+    } catch (e) {
+      console.error("更名群組失敗", e);
+    }
+  };
+
+  const handleDeleteGroup = async (id) => {
+    if (!window.confirm('確定要刪除此群組嗎？(會話會轉為未分類)')) return;
+    try {
+      await api.deleteGroup(id);
+      fetchData();
+    } catch (e) {
+      console.error("刪除群組失敗", e);
+    }
+  };
+
+  const handleMoveSession = async (sessionId, targetGroupId, targetSessionId, position) => {
+    // 簡單排序策略：
+    // 如果是移到群組頭，order = 0
+    // 如果是移到某 Session 旁邊，計算該 Session 的 order 並 +/- 1
+    // 注意：後端目前沒做連鎖排序，所以這裡暫時先以「移入該組且排在最前面」為簡化邏輯，或是依據 targetSession 決定
+    let newOrder = 0;
+    if (targetSessionId) {
+      const target = sessions.find(s => s.id === targetSessionId);
+      newOrder = position === 'top' ? target.order : target.order + 1;
+    }
+
+    try {
+      await api.moveSession(sessionId, targetGroupId, newOrder);
+      fetchData();
+    } catch (e) {
+      console.error("移動失敗", e);
+    }
+  };
+
+  const handleSendMessage = async (content) => {
+    const userMsg = { role: 'user', content };
     setMessages(prev => [...prev, userMsg]);
-    setInput('');
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          content: userMsg.content
-        })
-      });
-
-      const data = await res.json();
+      const data = await api.sendMessage(sessionId, content);
       setMessages(prev => [...prev, data]);
     } catch (e) {
-      console.error("聊天錯誤", e);
-      setMessages(prev => [...prev, { role: 'assistant', content: "錯誤: 無法連線至 AI 後端。" }]);
+      console.error("發送失敗", e);
+      setMessages(prev => [...prev, { role: 'assistant', content: "錯誤: 伺服器無回應。" }]);
     } finally {
       setIsLoading(false);
     }
-  }
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  }
+  };
 
   return (
     <div className="app-container">
-      {/* 側邊欄 */}
-      <div className="sidebar" style={{ width: sidebarOpen ? '260px' : '0', padding: sidebarOpen ? '1rem' : '0' }}>
-        <button className="new-chat-btn" onClick={createNewSession}>
-          <span>+</span> 新對話
-        </button>
-        <div className="history-list">
-          {sessions.map(s => (
-            <div
-              key={s.id}
-              className={`history-item ${sessionId === s.id ? 'active' : ''}`}
-              onClick={() => loadSession(s.id)}
-            >
-              {s.title}
-            </div>
-          ))}
-        </div>
-      </div>
+      <Sidebar
+        groups={groups}
+        sessions={sessions}
+        sessionId={sessionId}
+        sidebarOpen={sidebarOpen}
+        onNewChat={handleNewChat}
+        onLoadSession={handleLoadSession}
+        onDeleteSession={handleDeleteSession}
+        onRenameSession={handleRenameSession}
+        onNewGroup={handleNewGroup}
+        onRenameGroup={handleRenameGroup}
+        onDeleteGroup={handleDeleteGroup}
+        onMoveSession={handleMoveSession}
+      />
 
-      {/* 主聊天區 */}
       <div className="main-chat">
-        {/* 切換側邊欄按鈕 (選用，若需要可顯示) */}
-
         <div className="messages-container">
           {messages.length === 0 && (
-            <div style={{ textAlign: 'center', marginTop: '100px', color: 'var(--text-secondary)' }}>
+            <div className="empty-state">
               <h2>Llama 3.2 1B (本地端)</h2>
               <p>Powered by Electron + FastAPI + CUDA</p>
             </div>
           )}
 
           {messages.map((msg, idx) => (
-            <div key={idx} className={`message ${msg.role}`}>
-              <div className="avatar">
-                {msg.role === 'assistant' ? '🤖' : '👤'}
-              </div>
-              <div className="message-content">
-                {msg.content}
-              </div>
-            </div>
+            <ChatMessage key={idx} msg={msg} />
           ))}
 
           {isLoading && (
@@ -146,23 +208,10 @@ function App() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="input-area">
-          <div className="input-container">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="輸入訊息..."
-              rows={1}
-            />
-            <button className="send-btn" onClick={sendMessage} disabled={isLoading}>
-              ➤
-            </button>
-          </div>
-        </div>
+        <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
