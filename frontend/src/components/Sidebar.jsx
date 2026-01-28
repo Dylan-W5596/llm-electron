@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import folderIcon from '../assets/icons/I351001_create_new_folder_24dp.png';
+import settingsIcon from '../assets/icons/I351006_settings_24dp.png';
 
 function Sidebar({
     groups,
@@ -12,7 +14,11 @@ function Sidebar({
     onNewGroup,
     onRenameGroup,
     onDeleteGroup,
-    onMoveSession
+    onMoveSession,
+    onOpenSettings,
+    activeView,
+    onPlayClick,
+    t
 }) {
     const [editingId, setEditingId] = useState(null); // 'session-1' or 'group-1'
     const [editingTitle, setEditingTitle] = useState('');
@@ -21,6 +27,7 @@ function Sidebar({
 
     // 輔助函式：切換折覽
     const toggleGroup = (groupId) => {
+        onPlayClick();
         setCollapsedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
     };
 
@@ -96,8 +103,8 @@ function Sidebar({
                 <>
                     <span className="history-title">{s.title}</span>
                     <div className="history-actions">
-                        <button title="重新命名" onClick={(e) => handleStartRename(e, `session-${s.id}`, s.title)}>✏️</button>
-                        <button title="刪除" onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id); }}>🗑️</button>
+                        <button title="重新命名" onClick={(e) => { onPlayClick(); handleStartRename(e, `session-${s.id}`, s.title); }}>✏️</button>
+                        <button title="刪除" onClick={(e) => { e.stopPropagation(); onPlayClick(); onDeleteSession(s.id); }}>🗑️</button>
                     </div>
                 </>
             )}
@@ -107,10 +114,12 @@ function Sidebar({
     return (
         <div className="sidebar" style={{ width: sidebarOpen ? '260px' : '0', padding: sidebarOpen ? '1rem' : '0' }}>
             <div className="sidebar-header">
-                <button className="new-chat-btn" onClick={() => onNewChat()}>
-                    <span>+</span> 新對話
+                <button className="new-chat-btn" onClick={() => { onPlayClick(); onNewChat(); }}>
+                    <span>+</span> {t.newChat}
                 </button>
-                <button className="icon-btn" title="建立群組" onClick={onNewGroup}>📁+</button>
+                <button className="new-group-btn" onClick={() => { onPlayClick(); onNewGroup(); }} title={t.newGroup}>
+                    <img src={folderIcon} alt="New Group" />
+                </button>
             </div>
 
             <div className="history-list">
@@ -138,8 +147,8 @@ function Sidebar({
                                 <span className="group-name">{g.name}</span>
                             )}
                             <div className="group-actions">
-                                <button onClick={(e) => handleStartRename(e, `group-${g.id}`, g.name)}>✏️</button>
-                                <button onClick={(e) => { e.stopPropagation(); onDeleteGroup(g.id); }}>🗑️</button>
+                                <button onClick={(e) => { onPlayClick(); handleStartRename(e, `group-${g.id}`, g.name); }}>✏️</button>
+                                <button onClick={(e) => { e.stopPropagation(); onPlayClick(); onDeleteGroup(g.id); }}>🗑️</button>
                             </div>
                         </div>
                         {!collapsedGroups[g.id] && (
@@ -153,12 +162,21 @@ function Sidebar({
                 {/* 未分類 */}
                 <div className="group-container">
                     <div className="group-header" onDragOver={(e) => onDragOver(e, 'group-uncategorized')} onDrop={(e) => onDrop(e, null)}>
-                        <span className="group-name">未分類</span>
+                        <span className="group-name">{t.uncategorized}</span>
                     </div>
                     <div className="group-content">
                         {sessions.filter(s => s.group_id === null).map(renderSessionItem)}
                     </div>
                 </div>
+            </div>
+
+            <div className="sidebar-footer">
+                <button
+                    className={`settings-entry-btn ${activeView === 'settings' ? 'active' : ''}`}
+                    onClick={onOpenSettings}
+                >
+                    <img src={settingsIcon} alt="Settings" className="settings-icon-img" /> {t.settings}
+                </button>
             </div>
         </div>
     );

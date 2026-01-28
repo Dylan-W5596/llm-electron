@@ -1,9 +1,10 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
 
 let mainWindow;
+let monitorWindow;
 let backendProcess;
 
 const BACKEND_PORT = 8000;
@@ -68,8 +69,24 @@ function startBackend() {
     console.log(`正在啟動後端，使用: ${pythonPath} ${scriptPath}`);
 
     backendProcess = spawn(pythonPath, [scriptPath], {
-        cwd: path.dirname(scriptPath), // 設定 CWD 為 backend 目錄
-        stdio: 'inherit' // 將輸出導向至控制台
+        cwd: path.dirname(scriptPath),
+        stdio: 'pipe' // 改為 pipe 以便捕獲日誌
+    });
+
+    backendProcess.stdout.on('data', (data) => {
+        const text = data.toString();
+        process.stdout.write(text); // 同時輸出到主進程控制台
+        if (monitorWindow) {
+            monitorWindow.webContents.send('backend-log', text);
+        }
+    });
+
+    backendProcess.stderr.on('data', (data) => {
+        const text = data.toString();
+        process.stderr.write(text);
+        if (monitorWindow) {
+            monitorWindow.webContents.send('backend-log', `[ERROR] ${text}`);
+        }
     });
 
     backendProcess.on('error', (err) => {
@@ -92,6 +109,31 @@ function checkBackendReady(callback) {
         setTimeout(() => checkBackendReady(callback), 1000);
     });
 }
+
+// 開發者監控視窗 IPC
+ipcMain.on('open-monitor', () => {
+    if (monitorWindow) {
+        monitorWindow.focus();
+        return;
+    }
+
+    monitorWindow = new BrowserWindow({
+        width: 800,
+        height: 600,
+        title: 'Llama Backend Monitor',
+        backgroundColor: '#000000',
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false
+        }
+    });
+
+    monitorWindow.loadFile(path.join(__dirname, '../monitor.html'));
+
+    monitorWindow.on('closed', () => {
+        monitorWindow = null;
+    });
+});
 
 app.on('ready', () => {
     startBackend();

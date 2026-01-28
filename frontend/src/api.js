@@ -81,11 +81,12 @@ export const api = {
         return res.json();
     },
 
-    async sendMessage(sessionId, content) {
+    async sendMessage(sessionId, content, signal) {
         const res = await fetch(`${BACKEND_URL}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId, content })
+            body: JSON.stringify({ session_id: sessionId, content }),
+            signal
         });
         if (!res.ok) throw new Error('發送訊息失敗');
         return res.json();

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Backend Monitor</title>
+    <style>
+        body {
+            background: #000;
+            color: #e5e7eb;
+            /* Soft ivory/white */
+            font-family: 'Segoe UI', 'Consolas', 'Monaco', monospace;
+            margin: 0;
+            padding: 15px;
+            overflow-x: hidden;
+            font-size: 13px;
+            line-height: 1.6;
+            letter-spacing: 0.5px;
+        }
+
+        #log-container {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border-left: 2px solid #b45309;
+            /* Bronze accent */
+            padding-left: 15px;
+        }
+
+        .error {
+            color: #f87171;
+            font-weight: 600;
+        }
+
+        .system {
+            color: #d4af37;
+            font-weight: 700;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .token {
+            color: #38bdf8;
+        }
+
+        /* Cyan for tokens to keep it readable but pro */
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #000;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #d4af37, #b45309);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #d4af37;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="log-container"></div>
+    <script>
+        const { ipcRenderer } = require('electron');
+        const container = document.getElementById('log-container');
+
+        // 初始化訊息
+        const welcome = document.createElement('div');
+        welcome.className = 'system';
+        welcome.textContent = `[System] Backend Monitor Started at ${new Date().toLocaleTimeString()}\nWaiting for logs...\n------------------------------------------------\n`;
+        container.appendChild(welcome);
+
+        ipcRenderer.on('backend-log', (event, text) => {
+            const span = document.createElement('span');
+            if (text.startsWith('[ERROR]')) {
+                span.className = 'error';
+            }
+            span.textContent = text;
+            container.appendChild(span);
+
+            // 自動滾動到底部
+            window.scrollTo(0, document.body.scrollHeight);
+        });
+    </script>
+</body>
+
+</html>

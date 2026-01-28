@@ -3,6 +3,12 @@ import { api } from './api';
 import Sidebar from './components/Sidebar';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
+import Settings from './components/Settings';
+import { playSound } from './utils/soundUtils';
+import { languages } from './translations/languages';
+import assistantAvatar from './assets/icons/IM742001_account_circle_24dp.png';
+
+const { ipcRenderer } = (window.require && window.require('electron')) || { ipcRenderer: null };
 
 function App() {
   const [input, setInput] = useState('');
@@ -12,7 +18,26 @@ function App() {
   const [groups, setGroups] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [view, setView] = useState('chat'); // 'chat' or 'settings'
+  const [replyingTo, setReplyingTo] = useState(null);
+  const abortControllerRef = useRef(null);
+  const [config, setConfig] = useState(() => {
+    const saved = localStorage.getItem('llama_config');
+    return saved ? JSON.parse(saved) : {
+      theme: 'dark',
+      temperature: 0.7,
+      maxTokens: 512,
+      soundEnabled: true,
+      language: 'zh',
+    };
+  });
   const messagesEndRef = useRef(null);
+
+  // 持久化設定
+  useEffect(() => {
+    localStorage.setItem('llama_config', JSON.stringify(config));
+    document.body.dataset.theme = config.theme;
+  }, [config]);
 
   // 初始化
   useEffect(() => {
@@ -50,30 +75,36 @@ function App() {
   };
 
   const handleNewChat = async (groupId = null) => {
+    playSound('click', config.soundEnabled);
     try {
       const data = await api.createSession('New Chat', groupId);
       setSessionId(data.id);
       setMessages([]);
       await fetchData();
     } catch (e) {
+      playSound('error', config.soundEnabled);
       console.error("建立會話失敗", e);
     }
   };
 
   const handleLoadSession = async (id) => {
+    playSound('click', config.soundEnabled);
     try {
       setSessionId(id);
       const data = await api.getMessages(id);
       setMessages(data);
     } catch (e) {
+      playSound('error', config.soundEnabled);
       console.error("載入失敗", e);
     }
   };
 
   const handleDeleteSession = async (id) => {
     if (!window.confirm('確定要刪除此對話紀錄嗎？')) return;
+    playSound('click', config.soundEnabled);
     try {
       await api.deleteSession(id);
+      playSound('success', config.soundEnabled);
 
       // 更新列表
       const [gs, ss] = await Promise.all([api.getGroups(), api.getSessions()]);
@@ -91,6 +122,7 @@ function App() {
         }
       }
     } catch (e) {
+      playSound('error', config.soundEnabled);
       console.error("刪除失敗", e);
     }
   };
@@ -100,17 +132,22 @@ function App() {
     if (!targetTitle || targetTitle === sessions.find(s => s.id === id)?.title) return;
     try {
       await api.updateSession(id, targetTitle);
+      playSound('success', config.soundEnabled);
       fetchData();
     } catch (e) {
+      playSound('error', config.soundEnabled);
       console.error("更名失敗", e);
     }
   };
 
   const handleNewGroup = async () => {
+    playSound('click', config.soundEnabled);
     try {
       await api.createGroup('新群組');
+      playSound('success', config.soundEnabled);
       fetchData();
     } catch (e) {
+      playSound('error', config.soundEnabled);
       console.error("建立群組失敗", e);
     }
   };
@@ -118,18 +155,23 @@ function App() {
   const handleRenameGroup = async (id, newName) => {
     try {
       await api.updateGroup(id, { name: newName });
+      playSound('success', config.soundEnabled);
       fetchData();
     } catch (e) {
+      playSound('error', config.soundEnabled);
       console.error("更名群組失敗", e);
     }
   };
 
   const handleDeleteGroup = async (id) => {
     if (!window.confirm('確定要刪除此群組嗎？(會話會轉為未分類)')) return;
+    playSound('click', config.soundEnabled);
     try {
       await api.deleteGroup(id);
+      playSound('success', config.soundEnabled);
       fetchData();
     } catch (e) {
+      playSound('error', config.soundEnabled);
       console.error("刪除群組失敗", e);
     }
   };
@@ -154,18 +196,63 @@ function App() {
   };
 
   const handleSendMessage = async (content) => {
-    const userMsg = { role: 'user', content };
+    let finalContent = content;
+    if (replyingTo) {
+      finalContent = `[回覆內容: ${replyingTo}]\n\n${content}`;
+      setReplyingTo(null);
+    }
+
+    const userMsg = { role: 'user', content: finalContent };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
+    abortControllerRef.current = new AbortController();
+
     try {
-      const data = await api.sendMessage(sessionId, content);
+      const data = await api.sendMessage(sessionId, content, abortControllerRef.current.signal);
       setMessages(prev => [...prev, data]);
     } catch (e) {
-      console.error("發送失敗", e);
-      setMessages(prev => [...prev, { role: 'assistant', content: "錯誤: 伺服器無回應。" }]);
+      if (e.name === 'AbortError') {
+        console.log("生成已停止");
+      } else {
+        console.error("發送失敗", e);
+        setMessages(prev => [...prev, { role: 'assistant', content: "錯誤: 伺服器無回應。" }]);
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      // 將最後一則使用者訊息填回輸入框
+      const userMessages = messages.filter(m => m.role === 'user');
+      if (userMessages.length > 0) {
+        setInput(userMessages[userMessages.length - 1].content);
+      }
+    }
+  };
+
+  const handleCopyMessage = (content) => {
+    navigator.clipboard.writeText(content).then(() => {
+      // 可以在這裡添加一個簡單的提示或音效
+      playSound('success', config.soundEnabled);
+    });
+  };
+
+  const handleReplyMessage = (content) => {
+    setReplyingTo(content);
+  };
+
+  const t = languages[config.language] || languages.zh;
+
+  const handleOpenMonitor = () => {
+    if (ipcRenderer) {
+      ipcRenderer.send('open-monitor');
+    } else {
+      alert("僅在 Electron 環境支援此功能");
     }
   };
 
@@ -177,38 +264,72 @@ function App() {
         sessionId={sessionId}
         sidebarOpen={sidebarOpen}
         onNewChat={handleNewChat}
-        onLoadSession={handleLoadSession}
+        onLoadSession={(id) => { setView('chat'); handleLoadSession(id); }}
         onDeleteSession={handleDeleteSession}
         onRenameSession={handleRenameSession}
         onNewGroup={handleNewGroup}
         onRenameGroup={handleRenameGroup}
         onDeleteGroup={handleDeleteGroup}
         onMoveSession={handleMoveSession}
+        onOpenSettings={() => { playSound('click', config.soundEnabled); setView('settings'); }}
+        activeView={view}
+        onPlayClick={(force = false) => playSound('click', force || config.soundEnabled)}
+        t={t}
       />
 
       <div className="main-chat">
-        <div className="messages-container">
-          {messages.length === 0 && (
-            <div className="empty-state">
-              <h2>Llama 3.2 1B (本地端)</h2>
-              <p>Powered by Electron + FastAPI + CUDA</p>
+        {view === 'chat' ? (
+          <>
+            <div className="messages-container">
+              {messages.length === 0 && (
+                <div className="empty-state">
+                  <h2>Llama 3.2 1B (本地端)</h2>
+                  <p>Powered by Electron + FastAPI + CUDA</p>
+                </div>
+              )}
+
+              {messages.map((msg, idx) => (
+                <ChatMessage
+                  key={idx}
+                  msg={msg}
+                  onCopy={handleCopyMessage}
+                  onReply={handleReplyMessage}
+                  t={t}
+                />
+              ))}
+
+              {isLoading && (
+                <div className="message assistant">
+                  <div className="avatar">
+                    <img src={assistantAvatar} alt="AI" className="avatar-img" />
+                  </div>
+                  <div className="message-content">...</div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
-          )}
 
-          {messages.map((msg, idx) => (
-            <ChatMessage key={idx} msg={msg} />
-          ))}
-
-          {isLoading && (
-            <div className="message assistant">
-              <div className="avatar">🤖</div>
-              <div className="message-content">...</div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+            <ChatInput
+              input={input}
+              setInput={setInput}
+              replyingTo={replyingTo}
+              onCancelReply={() => setReplyingTo(null)}
+              onSendMessage={handleSendMessage}
+              onStopGeneration={handleStopGeneration}
+              isLoading={isLoading}
+              t={t}
+            />
+          </>
+        ) : (
+          <Settings
+            config={config}
+            onUpdateConfig={setConfig}
+            onBack={() => { playSound('click', config.soundEnabled); setView('chat'); }}
+            onPlayClick={(force = false) => playSound('click', force || config.soundEnabled)}
+            onOpenMonitor={() => { playSound('click', config.soundEnabled); handleOpenMonitor(); }}
+            t={t}
+          />
+        )}
       </div>
     </div>
   );

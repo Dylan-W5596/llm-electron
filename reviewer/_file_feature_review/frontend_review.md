@@ -1,58 +1,54 @@
-# 前端架構審查 (Frontend Review)
+# 前端架構審查 (Frontend Review) - Alpha 0.0.3 更新
 
 ## 檔案總覽
 
-### `frontend/electron/main.cjs`
-Electron 的主程序 (Main Process)。
-- **功能**:
-    - 建立應用程式視窗 (`BrowserWindow`).
-    - **子程序管理**: 啟動時自動產生 Python 後端程序 (`spawn` uvicorn)，並在關閉時清理。
-    - 載入 React 應用程式 (開發模式載入 `localhost`, 生產模式載入 `index.html`)。
-- **技術點**:
-    - `child_process.spawn`: 用於執行外部指令 (Python)。
-    - `CommonJS`: 使用 `.cjs` 副檔名以相容 Electron 與 Node.js 環境。
+### `frontend/electron/main.cjs` [UPDATED]
+- **功能**: 電子桌面環境的主程序，負責視窗生命週期。
+- **後端監控 (IPC)**: 
+    - 創立 `monitorWindow` 用於顯示後端日誌。
+    - 透過監聽 Python 子程序的 `stdout` 與 `stderr`，將即時輸出經由 IPC 傳送至監控網頁。
+- **路徑管理**: 根據開發/生產環境自動切換 `monitor.html` 的加載路徑。
 
-### `frontend/src/App.jsx`
-React 應用程式的核心調度組件。
-- **功能**:
-    - 管理全域狀態：`sessions` (會話清單)、`groups` (群組清單)、`sessionId` (目前選中會話)。
-    - **邏輯整合**: 協調 API 呼叫、會話切換、群組 CRUD 與拖放排序的後續處理。
-- **技術點**:
-    - `React Hooks` (`useState`, `useEffect`, `useRef`).
-    - 整合多個子組件，維持單向數據流。
+### `frontend/src/App.jsx` [UPDATED]
+- **全域狀態**: 
+    - 新增 `config.language` 用於控制介面語系。
+    - 整合 `playSound` 工具，為 UI 移動與系統確認提供反饋。
+- **優化後的音訊策略**: 僅在 UI 操作（切換、刪除、更名）時觸發音效，避開對話頻繁生成的流程以減少疲勞。
 
-### `frontend/src/api.js` [NEW]
-封裝所有後端通訊邏輯。
-- **功能**:
-    - 提供語義化的 API 介面 (例如 `getSessions`, `createGroup`, `moveSession`)。
-    - 統一處理錯誤與回應格式。
+### `frontend/src/translations/languages.js` [NEW]
+- **功能**: 翻譯鍵值對管理中心。
+- **架構**: 支援 `zh` (繁體中文) 與 `en` (English)，提供全平臺 UI 標籤的語系映射。
 
-### `frontend/src/components/` [NEW]
-模組化子組件。
-- **`Sidebar.jsx`**: 管理側邊欄 UI，包含群組渲染、摺疊切換、重新命名與 **HTML5 拖放 (Drag & Drop)** 實作。
-- **`ChatMessage.jsx`**: 負責單條訊息的渲染，支援 `react-markdown` 渲染 Markdown 內容與程式碼區塊。
-- **`ChatInput.jsx`**: 管理使用者輸入、自動調整高度與發送邏輯。
+### `frontend/src/utils/soundUtils.js` [RE-STORED & ENHANCED]
+- **策略**: 封裝 `Audio` 對象快取機制，提升重複播放的效能。
+- **用途**: 單一出口點管理 UI 提示音（click, success, error）。
 
-### `frontend/src/index.css`
-應用程式的樣式表 (Design System)。
-- **特色**:
-    - **變數管理**: 定義深色模式色票與動畫參數。
-    - **Drag Feedback**: 實作 `.drag-top` 與 `.drag-bottom` 類名，提供拖放時的黃藍底線提示。
-    - **Animations**: 訊息淡入與側邊欄伸縮平滑過渡。
+### `frontend/src/components/` [UPDATED]
+- **`Sidebar.jsx`**: 整合雙語標籤，並在導覽操作中加入 UI 提示音。
+- **`Settings.jsx`**: 
+    - 新增 **Language Selection**: 繁中/英文即時切換。
+    - 新增 **Audio Toggle**: 讓使用者自主控制 UI 提示音。
+    - 新增 **Developer Monitor**: 一鍵開啟「深色奢華」佈景的後端運算窗口。
+- **`monitor.html` [NEW]**: 
+    - 獨立渲染進程，採用 Terminal 樣式（黑底金邊）。
+    - 具備自動滾動與高效能日誌渲染能力。
+
+### `frontend/src/test/` [UPDATED]
+- **`settings.test.jsx`**: 驗證主題切換、語系變更及 UI 音效觸發斷言。
+- **`i18n.test.js` [NEW]**: 驗證翻譯字典的鍵值對完整性。
+- **`sound.test.js` [NEW]**: 驗證音訊播放器在停用/啟用狀態下的正確行為。
 
 ---
 
-## 核心功能清單 (Core Features)
+## 核心技術棧與亮點
 
-| 功能 | 說明 | 實作位置 |
+| 功能 | 說明 | 關鍵技術 |
 | :--- | :--- | :--- |
-| **群組化管理** | 支援建立、重新命名與刪除群組，對話紀錄可分類存放 | `Sidebar.jsx`, `api.js` |
-| **拖放介面** | 透過 Drag & Drop API 實現跨組移動與自定義排序 | `Sidebar.jsx`, `App.jsx` |
-| **Markdown 渲染** | 支援 GFM、程式碼高亮與數學公式展示 | `ChatMessage.jsx` |
-| **自動初始化** | 偵測歷史紀錄，避免產生重複的空白對話 | `App.jsx` |
+| **i18n 系統** | 無需重新啟動即可變更介面語系 | React State + Static Dictionary |
+| **優化版 UI 音訊** | 精準平衡「操作安定感」與「對話疲勞」 | Proxy Utility + HTML5 Audio |
+| **後端即時監控** | 開發者可觀察模型推論的底層 Token 輸出 | IPC Pipe + Stream Capture |
+| **Vitest 整合** | 11 個關鍵路徑測試，確保交付品質 | Vitest + RTL |
 
-## 技術棧
-- **React 18** + **Vite**: 前端開發與打包。
-- **Electron**: 轉化為桌面應用。
-- **React Markdown**: 處理 AI 回應的豐富格式。
-- **HTML5 Drag and Drop**: 輕量級的原生排序解決方案。
+---
+**最後更新**: 2026-01-28  
+**狀態**: 已同步 Alpha 0.0.3 完整功能集。

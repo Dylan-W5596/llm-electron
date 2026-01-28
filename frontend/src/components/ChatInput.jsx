@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import sendIcon from '../assets/icons/I351005_send_24dp.png';
+import stopIcon from '../assets/icons/I351007_stop_24dp.png';
 
-function ChatInput({ onSendMessage, isLoading }) {
-    const [input, setInput] = useState('');
+function ChatInput({ input, setInput, replyingTo, onCancelReply, onSendMessage, onStopGeneration, isLoading, t }) {
 
     const handleSend = () => {
         if (!input.trim() || isLoading) return;
@@ -16,19 +17,48 @@ function ChatInput({ onSendMessage, isLoading }) {
         }
     };
 
+    // 自動調整高度
+    const textareaRef = (el) => {
+        if (el) {
+            el.style.height = 'auto';
+            el.style.height = el.scrollHeight + 'px';
+        }
+    };
+
     return (
         <div className="input-area">
             <div className="input-container">
-                <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="輸入訊息..."
-                    rows={1}
-                />
-                <button className="send-btn" onClick={handleSend} disabled={isLoading || !input.trim()}>
-                    ➤
-                </button>
+                {replyingTo && (
+                    <div className="reply-preview">
+                        <div className="reply-content">
+                            回覆: {replyingTo}
+                        </div>
+                        <button className="cancel-reply-btn" onClick={onCancelReply}>
+                            ×
+                        </button>
+                    </div>
+                )}
+                <div className="input-main">
+                    <textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={t ? t.inputPlaceholder : "輸入訊息..."}
+                        rows={1}
+                    />
+                    <div className="input-actions">
+                        {isLoading ? (
+                            <button className="stop-btn" onClick={onStopGeneration} title="停止生成">
+                                <img src={stopIcon} alt="Stop" className="white-icon" />
+                            </button>
+                        ) : (
+                            <button className="send-btn" onClick={handleSend} disabled={!input.trim()}>
+                                <img src={sendIcon} alt="Send" className="white-icon" />
+                            </button>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );
